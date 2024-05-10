@@ -1,0 +1,126 @@
+version: "3.7"
+networks:
+  default: {}
+  kafkanetwork:
+  kafkauinetwork:
+  clickhousenetwork:
+  redisnetwork:
+services:  
+  clickhouse:
+    image: clickhouse/clickhouse-server:22.8.14.53
+    user: root
+    networks:
+      - clickhousenetwork
+    volumes:
+      - "/opt/mesInfrastructure/ClickHouseDataFolder:/var/lib/clickhouse/"
+      - "/opt/mesInfrastructure/ClickHouseLogFolder:/var/log/clickhouse-server/"
+      - "/opt/mesInfrastructure/ClickHouseData/Configs/users.xml:/etc/clickhouse-server/users.d/users.xml" 
+      - "/opt/mesInfrastructure/ClickHouseData/Configs/config.xml:/etc/clickhouse-server/config.d/config.xml" 
+      - "/opt/mesInfrastructure/ClickHouseData:/tmp/ClickHouseData"
+    logging:
+      driver: json-file
+      options:
+        max-file: 5
+        max-size: 10m
+        tag: clickhouse
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+    labels:
+      app.dockerswarm.io/managed-by: devopscenter.criticalmanufacturing
+      app.dockerswarm.io/name: clickhouse
+    ports:
+      - 8123:8123
+      - 8443:8443
+      - 9000:9000
+      - 9440:9440
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    networks:
+      - kafkauinetwork
+    ports:
+      - 8080:8080
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SSL
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION: /kafka.keystore.jks
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_PASSWORD: "secret"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: wslAddress:29092
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION: /kafka.truststore.jks
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD: "secret"
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ''
+    volumes:
+      - ./Certificates/Kafka/kafka.truststore.jks:/kafka.truststore.jks
+      - ./Certificates/Kafka/kafka.keystore.jks:/kafka.keystore.jks
+  kafka:
+    image: confluentinc/cp-kafka:7.2.1
+    hostname: kafka
+    networks:
+      - kafkanetwork
+    ports:
+      - "9092:9092"
+      - "9997:9997"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,SSL:SSL,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'SSL://wslAddress:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9997
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_NODE_ID: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'SSL://0.0.0.0:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'SSL'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_SECURITY_PROTOCOL: SSL
+      KAFKA_SSL_ENABLED_MECHANISMS: PLAIN,SSL
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: creds
+      KAFKA_SSL_KEY_CREDENTIALS: creds
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: creds
+      KAFKA_SSL_CLIENT_AUTH: 'required'
+      KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ''
+    volumes:
+      - /opt/mesInfrastructure/KafkaDataFolder:/var/lib/kafka/data
+      - /opt/mesInfrastructure/KafkaDataFolder/Certificates:/etc/kafka/secrets/
+      - ./scripts/update_run.sh:/tmp/update_run.sh
+    command: "bash -c 'if [ ! -f /tmp/update_run.sh ]; then echo \"ERROR: Did you forget the update_run.sh file that came with this docker-compose.yml file?\" && exit 1 ; else /tmp/update_run.sh && /etc/confluent/docker/run ; fi'"
+  redis:
+    image: redis:7.0.5
+    user: root
+    networks:
+      - redisnetwork
+    environment:
+      REDIS_TLS_ENABLED: "yes"
+      REDIS_TLS_CERT_FILE: /usr/local/etc/redis/tls/redis.crt
+      REDIS_TLS_KEY_FILE: /usr/local/etc/redis/tls/redis.key
+      REDIS_TLS_CA_FILE: /usr/local/etc/redis/tls/ca.crt
+    ports:
+      - "6379:6379" 
+    volumes:
+      - "/opt/mesInfrastructure/Redis/redis.conf:/data/redis.conf"
+      - "/opt/mesInfrastructure/Redis/Certificates:/usr/local/etc/redis/tls"
+    command: redis-server /data/redis.conf
+    logging:
+      driver: json-file
+      options:
+        max-file: 5
+        max-size: 10m
+        tag: criticalmanufacturing/cleitedezembrodevelopment/redis/{{.Name}}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s

@@ -1,0 +1,7 @@
+<clickhouse>
+    <users>
+        <default>
+            <password>qaz123WSX</password>
+        </default>
+	</users>
+</clickhouse>

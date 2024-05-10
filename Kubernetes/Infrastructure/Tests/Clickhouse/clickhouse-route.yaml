@@ -1,0 +1,15 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: clickhouse
+  namespace: infraless-mes
+  labels: {}
+spec:
+  to:
+    kind: Service
+    name: clickhouse
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
+  port:
+    targetPort: 9440
